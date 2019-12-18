@@ -1,72 +1,86 @@
 #include "util.h"
-#include "module_info.h"
+#include "moduleinfo.h"
 
 #include <cstring>
 #include <Windows.h>
 #include <Psapi.h>
 #include <stdint.h>
 
-int (*pfnGetBuildNumber)();
-int GetBuildNumber()
-{
-	if (pfnGetBuildNumber)
-		return pfnGetBuildNumber();
-	else
-		return 0;
-}
 
-void *FindPatternAddress(uint8_t *start_addr, size_t scan_len, const char *pattern, const char *mask)
+void *FindPatternAddress(
+    void *startAddr, int scanLen, const char *pattern, const char *mask)
 {
-	size_t mask_len		= strlen(mask);
-	uint8_t *end_addr	= (start_addr + scan_len) - mask_len;
-	for (uint8_t *i = start_addr; i <= end_addr; ++i)
+    bool isFailed;
+    size_t maskLen;
+    uint8_t *endAddr;
+
+    maskLen = strlen(mask);
+    if (scanLen < 0)
+        scanLen = maskLen;
+
+	endAddr = (uint8_t*)startAddr + (scanLen - maskLen);
+	for (uint8_t *i = (uint8_t*)startAddr; i <= endAddr; ++i)
 	{
-		bool is_failed = false;
-		for (size_t j = 0; j < mask_len; ++j)
+		isFailed = false;
+		for (size_t j = 0; j < maskLen; ++j)
 		{
-			uint8_t mask_byte		= mask[j];
-			uint8_t scan_byte		= *(i + j);
-			uint8_t pattern_byte	= pattern[j];
+			uint8_t maskByte    = mask[j];
+			uint8_t scanByte    = *(i + j);
+			uint8_t patternByte	= pattern[j];
 
-			if (mask_byte != '?' && pattern_byte != scan_byte)
+			if (maskByte != '?' && patternByte != scanByte)
 			{
-				is_failed = true;
+				isFailed = true;
 				break;
 			}
 		}
-		if (!is_failed)
+		if (!isFailed)
 			return i;
 	}
 	return nullptr;
 }
 
-bool GetModuleInfo(HANDLE proc_handle, HMODULE module_handle, module_info_t &module_info)
+bool GetModuleInfo(HANDLE procHandle, HMODULE moduleHandle, moduleinfo_t &moduleInfo)
 {
 	MODULEINFO minfo;
-	if (!GetModuleInformation(proc_handle, module_handle, &minfo, sizeof(minfo)))
+	if (!GetModuleInformation(procHandle, moduleHandle, &minfo, sizeof(minfo)))
 		return false;
 
-	module_info.baseAddr			= (uint8_t*)minfo.lpBaseOfDll;
-	module_info.imageSize			= minfo.SizeOfImage;
-	module_info.entryPointAddr	= (uint8_t*)minfo.EntryPoint;
+	moduleInfo.baseAddr         = (uint8_t*)minfo.lpBaseOfDll;
+	moduleInfo.imageSize        = minfo.SizeOfImage;
+	moduleInfo.entryPointAddr   = (uint8_t*)minfo.EntryPoint;
 	return true;
 }
 
-void *FindMemoryValue(uint32_t *start_addr, size_t scan_len, uint32_t value)
+void *FindMemoryInt32(void *startAddr, size_t scanLen, uint32_t scanValue)
 {
-	uint32_t *end_addr = (start_addr + scan_len) - sizeof(value);
-	for (uint32_t *i = start_addr; i <= end_addr; ++i)
+    void *valueAddr;
+    uint32_t *endAddr;
+    HANDLE procHandle;
+    uint32_t probeValue;
+
+    valueAddr = nullptr;
+    procHandle = GetCurrentProcess();
+    endAddr = (uint32_t*)startAddr + (scanLen - sizeof(scanValue));
+
+	for (uint32_t *i = (uint32_t*)startAddr; i <= endAddr; ++i)
 	{
-		if (*i == value)
-			return i;
+        if (!ReadProcessMemory(procHandle, i, &probeValue, sizeof(*i), NULL))
+            continue;
+      
+        if (probeValue == scanValue)
+        {
+            valueAddr = i;
+            break;
+        }
 	}
-	return nullptr;
+	return valueAddr;
 }
 
-void FindServerModule(HMODULE &module_handle)
+void FindServerModule(HMODULE &moduleHandle)
 {
-	size_t names_count;
-	const char *lib_names[] =
+	size_t namesCount;
+	static const char *libNames[] =
 	{
 		// TODO: parsing this names from external file
 		"mp.dll",
@@ -75,11 +89,11 @@ void FindServerModule(HMODULE &module_handle)
 		"echoes.dll",
 	};
 
-	names_count = sizeof(lib_names) / sizeof(*lib_names);
-	for (size_t i = 0; i < names_count; ++i)
+	namesCount = sizeof(libNames) / sizeof(*libNames);
+	for (size_t i = 0; i < namesCount; ++i)
 	{
-		module_handle = GetModuleHandle(lib_names[i]);
-		if (module_handle)
+		moduleHandle = GetModuleHandle(libNames[i]);
+		if (moduleHandle)
 			return;
 	}
 }
