@@ -1,6 +1,11 @@
 #include "buildinfo.h"
 #include "util.h"
-#include "memory_defs.h"
+
+#define SIGN_BUILD_NUMBER		"\xA1\x00\x00\x00\x00\x83\xEC\x08\x00\x33\x00\x85\xC0"
+#define MASK_BUILD_NUMBER		"x????xxx?x?xx"
+#define SIGN_BUILD_NUMBER_NEW	"\x55\x8B\xEC\x83\xEC\x08\xA1\x00\x00\x00\x00\x56\x33\xF6\x85\xC0\x0F\x85\x00\x00\x00\x00\x53\x33\xDB\x8B\x04\x9D"
+#define MASK_BUILD_NUMBER_NEW	"xxxxxxx????xxxxxxx????xxxxxx"
+
 
 int (*pfnGetBuildNumber)();
 static const buildinfo_entry_t g_aBuildInfo[] = 
@@ -25,11 +30,13 @@ static const buildinfo_entry_t g_aBuildInfo[] =
     }
 };
 
-void *FindFunctionAddress(functype_t funcType, void *startAddr, int scanLen)
+void *FindFunctionAddress(functype_t funcType, void *startAddr, void *endAddr)
 {
     int currBuildNumber = GetBuildNumber();
     const int buildInfoLen = sizeof(g_aBuildInfo) / sizeof(g_aBuildInfo[0]);
     const int lastEntryIndex = buildInfoLen - 1;
+    const funcdata_t *funcData = 
+        &g_aBuildInfo[lastEntryIndex].functionData[funcType];
 
     for (int i = 0; i < lastEntryIndex; ++i)
     {
@@ -39,27 +46,30 @@ void *FindFunctionAddress(functype_t funcType, void *startAddr, int scanLen)
         // valid only if build info entries sorted ascending
         if (nextBuildInfo.number > currBuildNumber)
         {
-            const funcdata_t &funcData = buildInfo.functionData[funcType];
-            return FindPatternAddress(
-                startAddr, scanLen, funcData.signature, funcData.mask);
+            funcData = &buildInfo.functionData[funcType];
+            break;
         }
     }
 
-    const funcdata_t &funcData = 
-        g_aBuildInfo[lastEntryIndex].functionData[funcType];
+    if (!endAddr)
+        endAddr = (uint8_t*)startAddr + strlen(funcData->mask);
+
     return FindPatternAddress(
         startAddr, 
-        scanLen, 
-        funcData.signature, 
-        funcData.mask
+        endAddr, 
+        funcData->signature, 
+        funcData->mask
     );
 }
 
 bool FindBuildNumberFunc(const moduleinfo_t &engineModule)
 {
+    uint8_t *moduleStartAddr = engineModule.baseAddr;
+    uint8_t *moduleEndAddr = moduleStartAddr + engineModule.imageSize;
+
     pfnGetBuildNumber = (int(*)())FindPatternAddress(
-        engineModule.baseAddr,
-        engineModule.imageSize,
+        moduleStartAddr,
+        moduleEndAddr,
     	SIGN_BUILD_NUMBER,
     	MASK_BUILD_NUMBER
     );
@@ -67,8 +77,8 @@ bool FindBuildNumberFunc(const moduleinfo_t &engineModule)
     if (!pfnGetBuildNumber)
     {
         pfnGetBuildNumber = (int(*)())FindPatternAddress(
-            engineModule.baseAddr,
-            engineModule.imageSize,
+            moduleStartAddr,
+            moduleEndAddr,
             SIGN_BUILD_NUMBER_NEW,
             MASK_BUILD_NUMBER_NEW
         );
