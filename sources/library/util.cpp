@@ -44,9 +44,14 @@ HMODULE FindModuleByExport(HANDLE procHandle, const char *exportName)
     std::vector<HMODULE> modulesList;
 
     // retrieve modules count
+    listSize = 0;
     EnumProcessModules(procHandle, NULL, 0, &listSize);
     modulesCount = listSize / sizeof(HMODULE);
-    modulesList.resize(modulesCount);
+
+    if (modulesCount > 0)
+        modulesList.resize(modulesCount);
+    else
+        return NULL;
 
     if (!EnumProcessModules(procHandle, modulesList.data(), listSize, &listSize))
         return NULL;
