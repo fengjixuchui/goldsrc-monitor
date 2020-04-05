@@ -1,5 +1,6 @@
 #include "util.h"
 #include "moduleinfo.h"
+#include "globals.h" // temporary
 
 #include <stdint.h>
 #include <cstring>
@@ -16,25 +17,25 @@ void *FindPatternAddress(
 
     maskLen = strlen(mask);
     totalEndAddr = (uint8_t*)endAddr - maskLen;
-	for (uint8_t *i = (uint8_t*)startAddr; i <= totalEndAddr; ++i)
-	{
-		isFailed = false;
-		for (size_t j = 0; j < maskLen; ++j)
-		{
-			uint8_t maskByte    = mask[j];
-			uint8_t scanByte    = *(i + j);
-			uint8_t patternByte	= pattern[j];
+    for (uint8_t *i = (uint8_t*)startAddr; i <= totalEndAddr; ++i)
+    {
+        isFailed = false;
+        for (size_t j = 0; j < maskLen; ++j)
+        {
+            uint8_t maskByte = mask[j];
+            uint8_t scanByte = *(i + j);
+            uint8_t patternByte = pattern[j];
 
-			if (maskByte != '?' && patternByte != scanByte)
-			{
-				isFailed = true;
-				break;
-			}
-		}
-		if (!isFailed)
-			return i;
-	}
-	return nullptr;
+            if (maskByte != '?' && patternByte != scanByte)
+            {
+                isFailed = true;
+                break;
+            }
+        }
+        if (!isFailed)
+            return i;
+    }
+    return nullptr;
 }
 
 HMODULE FindModuleByExport(HANDLE procHandle, const char *exportName)
@@ -67,7 +68,7 @@ HMODULE FindModuleByExport(HANDLE procHandle, const char *exportName)
         moduleAddr  = (uint8_t*)modulesList[i];
         dosHeader   = (PIMAGE_DOS_HEADER)moduleAddr;
         peHeader    = (PIMAGE_NT_HEADERS)(moduleAddr + dosHeader->e_lfanew);
-        dllExports  = (PIMAGE_EXPORT_DIRECTORY)(moduleAddr + 
+        dllExports  = (PIMAGE_EXPORT_DIRECTORY)(moduleAddr +
             peHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
 
         if (!dllExports->AddressOfNames)
@@ -86,14 +87,14 @@ HMODULE FindModuleByExport(HANDLE procHandle, const char *exportName)
 
 bool GetModuleInfo(HANDLE procHandle, HMODULE moduleHandle, moduleinfo_t &moduleInfo)
 {
-	MODULEINFO minfo;
-	if (!GetModuleInformation(procHandle, moduleHandle, &minfo, sizeof(minfo)))
-		return false;
+    MODULEINFO minfo;
+    if (!GetModuleInformation(procHandle, moduleHandle, &minfo, sizeof(minfo)))
+        return false;
 
-	moduleInfo.baseAddr         = (uint8_t*)minfo.lpBaseOfDll;
-	moduleInfo.imageSize        = minfo.SizeOfImage;
-	moduleInfo.entryPointAddr   = (uint8_t*)minfo.EntryPoint;
-	return true;
+    moduleInfo.baseAddr = (uint8_t*)minfo.lpBaseOfDll;
+    moduleInfo.imageSize = minfo.SizeOfImage;
+    moduleInfo.entryPointAddr = (uint8_t*)minfo.EntryPoint;
+    return true;
 }
 
 void *FindMemoryInt32(void *startAddr, void *endAddr, uint32_t scanValue)
@@ -107,16 +108,134 @@ void *FindMemoryInt32(void *startAddr, void *endAddr, uint32_t scanValue)
     procHandle      = GetCurrentProcess();
     totalEndAddr    = (uint32_t*)((size_t)endAddr - sizeof(scanValue));
 
-	for (uint32_t *i = (uint32_t*)startAddr; i <= totalEndAddr; ++i)
-	{
+    for (uint32_t *i = (uint32_t*)startAddr; i <= totalEndAddr; ++i)
+    {
         if (!ReadProcessMemory(procHandle, i, &probeValue, sizeof(*i), NULL))
             continue;
-      
+
         if (probeValue == scanValue)
         {
             valueAddr = i;
             break;
         }
-	}
-	return valueAddr;
+    }
+    return valueAddr;
+}
+
+//static bool ClipLine(int d, 
+//    const vec3_t &bboxMin, const vec3_t &bboxMax, 
+//    const vec3_t &lineStart, const vec3_t &lineEnd,
+//    float &f_low, float &f_high)
+//{
+//    float f_dim_low, f_dim_high;
+//    f_dim_low = (bboxMin[d] - lineStart[d]) / (lineEnd[d] - lineStart[d]);
+//    f_dim_high = (bboxMax[d] - lineStart[d]) / (lineEnd[d] - lineStart[d]);
+//
+//    if (f_dim_high < f_dim_low)
+//        std::swap(f_dim_high, f_dim_low);
+//
+//    if (f_dim_high < f_low)
+//        return false;
+//
+//    if (f_dim_low > f_high)
+//        return false;
+//
+//    f_low = max(f_dim_low, f_low);
+//    f_high = max(f_dim_high, f_high);
+//
+//    if (f_low > f_high)
+//        return false;
+//
+//    return true;
+//}
+
+float TraceBBoxLine(
+    const vec3_t &bboxMin, const vec3_t &bboxMax, 
+    const vec3_t &lineStart, const vec3_t &lineEnd)
+{
+    vec3_t rayDirection;
+    vec3_t invertedDir;
+    vec3_t fractionMin;
+    vec3_t fractionMax;
+    vec3_t fractionNear;
+    vec3_t fractionFar;
+    float nearDotFract;
+    float farDotFract;
+
+    // ray equation
+    // vector O + vector D * t
+    // O - ray origin
+    // D - ray direction
+    // t - fraction
+    // https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
+
+    const vec3_t &rayOrigin = lineStart;
+    rayDirection = (lineEnd - lineStart);
+    const float lineLength = rayDirection.Length();
+    rayDirection = rayDirection.Normalize();
+
+    invertedDir.x   = 1.f / rayDirection.x; 
+    invertedDir.y   = 1.f / rayDirection.y; 
+    invertedDir.z   = 1.f / rayDirection.z; 
+
+    fractionMin.x   = (bboxMin.x - rayOrigin.x) * invertedDir.x;
+    fractionMin.y   = (bboxMin.y - rayOrigin.y) * invertedDir.y;
+    fractionMax.x   = (bboxMax.x - rayOrigin.x) * invertedDir.x;
+    fractionMax.y   = (bboxMax.y - rayOrigin.y) * invertedDir.y;
+
+    fractionNear.x  = min(fractionMin.x, fractionMax.x);
+    fractionNear.y  = min(fractionMin.y, fractionMax.y);
+    fractionFar.x   = max(fractionMin.x, fractionMax.x);
+    fractionFar.y   = max(fractionMin.y, fractionMax.y);
+
+    farDotFract     = fractionFar.x;
+    nearDotFract    = fractionNear.x;
+
+    // handle case when ray misses the box
+    if (nearDotFract > fractionFar.y || fractionNear.y > farDotFract) 
+        return 1.f;
+
+    if (fractionNear.y > nearDotFract)
+        nearDotFract = fractionNear.y;
+
+    if (fractionFar.y < farDotFract)
+        farDotFract = fractionFar.y;
+
+    fractionMin.z   = (bboxMin.z - rayOrigin.z) / rayDirection.z;
+    fractionMax.z   = (bboxMax.z - rayOrigin.z) / rayDirection.z;
+    fractionFar.z   = max(fractionMin.z, fractionMax.z);
+    fractionNear.z  = min(fractionMin.z, fractionMax.z);
+
+    // another one
+    if (nearDotFract > fractionFar.z || fractionNear.z > farDotFract)
+        return 1.f;
+
+    if (fractionNear.z > nearDotFract)
+        nearDotFract = fractionNear.z;
+
+    if (fractionFar.z < farDotFract)
+        farDotFract = fractionFar.z;
+
+    if (nearDotFract < 0.f)
+        return 1.f;
+
+    return nearDotFract / lineLength;
+}
+
+float GetCurrentSysTime()
+{
+    static LARGE_INTEGER	perfFreq;
+    static LARGE_INTEGER	clockStart;
+    LARGE_INTEGER		    currentTime;
+    LONGLONG                timeDiff;
+
+    if (!perfFreq.QuadPart)
+    {
+        QueryPerformanceFrequency(&perfFreq);
+        QueryPerformanceCounter(&clockStart);
+    }
+
+    QueryPerformanceCounter(&currentTime);
+    timeDiff = currentTime.QuadPart - clockStart.QuadPart;
+    return (float)timeDiff / (float)perfFreq.QuadPart;
 }
