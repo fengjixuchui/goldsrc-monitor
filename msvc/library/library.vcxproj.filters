@@ -41,6 +41,9 @@
     <ClCompile Include="..\..\sources\string_stack.cpp">
       <Filter>Sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\sources\library\measurement.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\sources\library\util.h">
@@ -79,5 +82,14 @@
     <ClInclude Include="..\..\sources\string_stack.h">
       <Filter>Headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\sources\library\measurement.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\sources\library\resource.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="library.rc" />
   </ItemGroup>
 </Project>
