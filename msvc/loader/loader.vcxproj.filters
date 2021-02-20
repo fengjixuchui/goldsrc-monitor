@@ -39,6 +39,11 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="loader.rc" />
+    <Image Include="..\..\resources\logo.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\sources\loader\loader.rc">
+      <Filter>Sources</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>
