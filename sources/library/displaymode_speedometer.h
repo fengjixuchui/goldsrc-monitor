@@ -4,16 +4,15 @@
 class CModeSpeedometer : public IDisplayMode
 {
 public: 
-    static CModeSpeedometer &GetInstance();
+    CModeSpeedometer() {};
+    virtual ~CModeSpeedometer() {};
 
-    void Render2D(int scrWidth, int scrHeight) override;
+    void Render2D(int scrWidth, int scrHeight, CStringStack &screenText) override;
     void Render3D() override {};
     bool KeyInput(int, int, const char *) override { return true; };
+    void HandleChangelevel() override {};
+    DisplayModeIndex GetModeIndex() override { return DISPLAYMODE_SPEEDOMETER; };
 
 private:
-    CModeSpeedometer() {};
-    CModeSpeedometer(const CModeSpeedometer&) = delete;
-    CModeSpeedometer& operator=(const CModeSpeedometer&) = delete;
+    void DrawVelocityBar(int scrWidth, int scrHeight, float velocity);
 };
-
-extern CModeSpeedometer &g_ModeSpeedometer;

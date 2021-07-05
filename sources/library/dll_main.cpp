@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "core.h"
+#include "application.h"
 #include "exception.h"
 #include "hooks.h"
 
@@ -11,8 +11,9 @@ BOOLEAN WINAPI DllMain(HINSTANCE hDllHandle, DWORD nReason, LPVOID Reserved)
 {
     if (nReason == DLL_PROCESS_ATTACH)
     {
-        try {
-            ProgramInit();
+        try 
+        {
+            g_Application.Run();
         }
         catch (CException &ex)
         {
@@ -25,13 +26,12 @@ BOOLEAN WINAPI DllMain(HINSTANCE hDllHandle, DWORD nReason, LPVOID Reserved)
                 ex.GetLineNumber(),
                 ex.GetDescription()
             );
-            MessageBox(NULL, ex.m_szMessageBuffer, "GoldSrc Monitor", MB_OK | MB_ICONWARNING);
+            MessageBox(NULL, ex.m_szMessageBuffer, APP_TITLE_STR, MB_OK | MB_ICONWARNING);
             return FALSE;
         }
     }
     else if (nReason == DLL_PROCESS_DETACH)
     {
-        RemoveHooks();
     }
 
     return TRUE;

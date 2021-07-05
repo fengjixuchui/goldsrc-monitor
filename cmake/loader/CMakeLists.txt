@@ -13,16 +13,17 @@ if (POLICY CMP0091)
 endif()
 
 add_executable(${PROJECT_NAME} 
-	../../sources/exception.cpp
-	../../sources/loader/main.cpp
-	../../sources/loader/util.cpp
-	../../sources/loader/application.cpp
-	../../sources/loader/loader.rc
+	"../../sources/exception.cpp"
+	"../../sources/loader/main.cpp"
+	"../../sources/loader/utils.cpp"
+	"../../sources/module_info.cpp"
+	"../../sources/loader/application.cpp"
+	"../../sources/loader/loader.rc"
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-	../../sources
-	../../sources/loader
+	"../../sources"
+	"../../sources/loader"
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES 
@@ -40,7 +41,17 @@ if (MSVC)
 		PSAPI_VERSION=1 # for WinXP compatibility
 	)
 
+	if (CMAKE_CONFIGURATION_TYPES MATCHES Debug)
+		target_compile_options(${PROJECT_NAME} PRIVATE /Od) # disable optimizing at all
+		target_compile_options(${PROJECT_NAME} PRIVATE /ZI) # enable "Edit and Continue" MSVC feature
+		target_link_options(${PROJECT_NAME} PRIVATE /INCREMENTAL /SAFESEH:NO)
+	else()
+		target_compile_options(${PROJECT_NAME} PRIVATE /Ob1) # disable force function inlining, to prevent segfault in release mode
+		target_compile_options(${PROJECT_NAME} PRIVATE /O1) # enable optimizing to minimize size
+	endif()
+
 	set_compiler_runtime(${PROJECT_NAME} STATIC)
+	target_compile_options(${PROJECT_NAME} PRIVATE /Zc:threadSafeInit-) # for WinXP compatibility (to avoid LoadLibrary error #998)
 	target_link_libraries(${PROJECT_NAME} PRIVATE 
 		psapi 
 		shlwapi

@@ -1,163 +1,135 @@
 #include "stdafx.h"
 #include "hooks.h"
-#include "core.h"
-#include "globals.h"
+#include "application.h"
+#include "client_module.h"
 #include "exception.h"
+#include "local_player.h"
 
-// polyhook headers
-#include <polyhook2/ZydisDisassembler.hpp>
-#include <polyhook2/Detour/x86Detour.hpp>
-
-// hooking stuff
-typedef int (*pfnRedraw)(float, int);
-typedef void (*pfnPlayerMove)(playermove_t*, int);
-typedef int (*pfnKeyEvent)(int, int, const char *);
-typedef void (*pfnDrawTriangles)();
-
-typedef PLH::x86Detour detour_t;
-typedef PLH::ZydisDisassembler disasm_t;
-
-static uint64_t     g_pfnOrigRedraw;
-static uint64_t     g_pfnOrigPlayerMove;
-static uint64_t     g_pfnOrigKeyEvent;
-static uint64_t     g_pfnOrigDrawTriangles;
-
-static detour_t	    *g_DetourRedraw;
-static detour_t     *g_DetourPlayerMove;
-static detour_t     *g_DetourKeyEvent;
-static detour_t     *g_DetourDrawTriangles;
-static disasm_t     g_DisasmX86(PLH::Mode::x86);
-
-static int  HookRedraw(float time, int intermission);
-static int  HookKeyEvent(int down, int keyNum, const char *bindName);
-static void HookPlayerMove(playermove_t *pmove, int server);
-static void HookDrawTriangles();
-
-static void DisposeHookingStuff()
-{
-    if (g_DetourRedraw)
-        g_DetourRedraw->unHook();
-    if (g_DetourKeyEvent)
-        g_DetourKeyEvent->unHook();
-    if (g_DetourPlayerMove)
-        g_DetourPlayerMove->unHook();
-    if (g_DetourDrawTriangles)
-        g_DetourDrawTriangles->unHook();
-
-    delete g_DetourRedraw;
-    delete g_DetourKeyEvent;
-    delete g_DetourPlayerMove;
-    delete g_DetourDrawTriangles;
-}
-
-void ApplyHooks()
-{
-    char *pfnRedraw = (char *)GetProcAddress(g_hClientModule, "HUD_Redraw");
-    char *pfnPlayerMove = (char *)GetProcAddress(g_hClientModule, "HUD_PlayerMove");
-    char *pfnKeyEvent = (char *)GetProcAddress(g_hClientModule, "HUD_Key_Event");
-    char *pfnDrawTriangles = (char *)GetProcAddress(g_hClientModule, "HUD_DrawTransparentTriangles");
-
-    char *pfnHookRedraw     = (char *)&HookRedraw;
-    char *pfnHookPlayerMove = (char *)&HookPlayerMove;
-    char *pfnHookKeyEvent   = (char *)&HookKeyEvent;
-    char *pfnHookDrawTriangles = (char *)&HookDrawTriangles;
-
-    g_DetourRedraw = new detour_t(pfnRedraw, pfnHookRedraw, &g_pfnOrigRedraw, g_DisasmX86);
-    g_DetourKeyEvent = new detour_t(pfnKeyEvent, pfnHookKeyEvent, &g_pfnOrigKeyEvent, g_DisasmX86);
-    g_DetourPlayerMove = new detour_t(
-        pfnPlayerMove, pfnHookPlayerMove, &g_pfnOrigPlayerMove, g_DisasmX86
-    );
-    g_DetourDrawTriangles = new detour_t(
-        pfnDrawTriangles, pfnHookDrawTriangles, &g_pfnOrigDrawTriangles, g_DisasmX86
-    );
-
-    if (!g_DetourRedraw || 
-        !g_DetourPlayerMove || 
-        !g_DetourKeyEvent || 
-        !g_DetourDrawTriangles)
-    {
-        DisposeHookingStuff();
-        EXCEPT("failed to allocate hooking stuff");
-    }
-
-    bool isHookSuccessful = (
-        g_DetourRedraw->hook() &&
-        g_DetourPlayerMove->hook()
-    );
-
-    if (!g_DetourKeyEvent->hook())
-    {
-        g_pClientEngFuncs->Con_Printf(
-            "WARNING: KeyEvent() hooking failed: "
-            "measurement mode will not react to keys."
-        );
-    }
-
-    if (!g_DetourDrawTriangles->hook())
-    {
-        pfnDrawTriangles = (char *)GetProcAddress(g_hClientModule, "HUD_DrawNormalTriangles");
-
-        delete g_DetourDrawTriangles;
-        g_DetourDrawTriangles = new detour_t(
-            pfnDrawTriangles, pfnHookDrawTriangles, &g_pfnOrigDrawTriangles, g_DisasmX86
-        );
-
-        if (!g_DetourDrawTriangles->hook())
-        {
-            g_pClientEngFuncs->Con_Printf(
-                "WARNING: DrawTriangles() hooking failed: entity "
-                "report mode will not draw entity hull lines."
-            );
-        }
-    }
-
-    if (!isHookSuccessful)
-    {
-        DisposeHookingStuff();
-        EXCEPT("unable to hook desired functions");
-    }
-}
-
-void RemoveHooks()
-{
-    // check for client.dll not already unloaded from process
-    if (GetModuleHandle("client.dll"))
-        DisposeHookingStuff();
-}
+static CFunctionHook<CHooks::pfnRedraw_t> g_hookRedraw;
+static CFunctionHook<CHooks::pfnPlayerMove_t> g_hookPlayerMove;
+static CFunctionHook<CHooks::pfnKeyEvent_t> g_hookKeyEvent;
+static CFunctionHook<CHooks::pfnDrawTriangles_t> g_hookDrawTriangles;
+static CFunctionHook<CHooks::pfnIsThirdPerson_t> g_hookIsThirdPerson;
+static CFunctionHook<CHooks::pfnCameraOffset_t> g_hookCameraOffset;
 
 NOINLINE static int __cdecl HookRedraw(float time, int intermission)
 {
     // call original function
-    PLH::FnCast(g_pfnOrigRedraw, pfnRedraw())(time, intermission);
-    AssignDisplayMode();
-
+    PLH::FnCast(g_hookRedraw.GetTrampolineAddr(), CHooks::pfnRedraw_t())(time, intermission);
+    g_Application.CheckForChangelevel(time);
     if (g_pPlayerMove)
     {
         bool isIntermission = intermission != 0;
-        g_ScreenInfo.iSize = sizeof(g_ScreenInfo);
-        g_pClientEngFuncs->pfnGetScreenInfo(&g_ScreenInfo);
-        g_pDisplayMode->Render2D(g_ScreenInfo.iWidth, g_ScreenInfo.iHeight);
+        g_Application.DisplayModeRender2D();
     }
-
     return 1;
 }
 
 NOINLINE static void __cdecl HookPlayerMove(playermove_t *pmove, int server)
 {
-    PLH::FnCast(g_pfnOrigPlayerMove, pfnPlayerMove())(pmove, server);
-    g_pPlayerMove = pmove;
+    PLH::FnCast(g_hookPlayerMove.GetTrampolineAddr(), CHooks::pfnPlayerMove_t())(pmove, server);
+    g_LocalPlayer.Setup(pmove);
 }
 
 NOINLINE static int __cdecl HookKeyEvent(int keyDown, int keyCode, const char *bindName)
 {
-    int returnCode = PLH::FnCast(g_pfnOrigKeyEvent, pfnKeyEvent())(
+    int returnCode = PLH::FnCast(g_hookKeyEvent.GetTrampolineAddr(), CHooks::pfnKeyEvent_t())(
         keyDown, keyCode, bindName
     );
-    return returnCode && g_pDisplayMode->KeyInput(keyDown, keyCode, bindName);
+    return returnCode && g_Application.KeyInput(keyDown, keyCode, bindName);
 }
 
 NOINLINE static void __cdecl HookDrawTriangles()
 {
-    PLH::FnCast(g_pfnOrigDrawTriangles, pfnDrawTriangles())();
-    g_pDisplayMode->Render3D();
+    PLH::FnCast(g_hookDrawTriangles.GetTrampolineAddr(), CHooks::pfnDrawTriangles_t())();
+    g_Application.DisplayModeRender3D();
+}
+
+NOINLINE static int __cdecl HookIsThirdPerson()
+{
+    int returnCode = PLH::FnCast(g_hookIsThirdPerson.GetTrampolineAddr(), CHooks::pfnIsThirdPerson_t())();
+    return returnCode || g_LocalPlayer.IsThirdPersonForced();
+}
+
+NOINLINE static void __cdecl HookCameraOffset(float *cameraOffset)
+{
+    PLH::FnCast(g_hookCameraOffset.GetTrampolineAddr(), CHooks::pfnCameraOffset_t())(cameraOffset);
+    if (g_LocalPlayer.IsThirdPersonForced())
+    {
+        g_pClientEngfuncs->GetViewAngles(cameraOffset);
+        cameraOffset[2] = g_LocalPlayer.GetThirdPersonCameraDist();
+    }
+}
+
+void CHooks::Apply()
+{
+    pfnRedraw_t pfnRedraw = (pfnRedraw_t)g_ClientModule.GetFuncAddress("HUD_Redraw");
+    pfnPlayerMove_t pfnPlayerMove = (pfnPlayerMove_t)g_ClientModule.GetFuncAddress("HUD_PlayerMove");
+    pfnKeyEvent_t pfnKeyEvent = (pfnKeyEvent_t)g_ClientModule.GetFuncAddress("HUD_Key_Event");
+    pfnDrawTriangles_t pfnDrawTriangles = (pfnDrawTriangles_t)g_ClientModule.GetFuncAddress("HUD_DrawTransparentTriangles");
+    pfnIsThirdPerson_t pfnIsThirdPerson = (pfnIsThirdPerson_t)g_ClientModule.GetFuncAddress("CL_IsThirdPerson");
+    pfnCameraOffset_t pfnCameraOffset = (pfnCameraOffset_t)g_ClientModule.GetFuncAddress("CL_CameraOffset");
+
+    g_hookRedraw.Hook(pfnRedraw, &HookRedraw);
+    g_hookPlayerMove.Hook(pfnPlayerMove, &HookPlayerMove);
+    g_hookKeyEvent.Hook(pfnKeyEvent, &HookKeyEvent);
+    g_hookDrawTriangles.Hook(pfnDrawTriangles, &HookDrawTriangles);
+    g_hookIsThirdPerson.Hook(pfnIsThirdPerson, &HookIsThirdPerson);
+    g_hookCameraOffset.Hook(pfnCameraOffset, &HookCameraOffset);
+
+    if (!g_hookKeyEvent.IsHooked())
+    {
+        g_pClientEngfuncs->Con_Printf(
+            "WARNING: KeyEvent() hooking failed: "
+            "measurement mode will not react to keys."
+        );
+    }
+
+    if (!g_hookDrawTriangles.IsHooked())
+    {
+        pfnDrawTriangles_t pfnDrawTriangles = (pfnDrawTriangles_t)g_ClientModule.GetFuncAddress("HUD_DrawNormalTriangles");
+        if (!g_hookDrawTriangles.Hook(pfnDrawTriangles, &HookDrawTriangles))
+        {
+            g_pClientEngfuncs->Con_Printf(
+                "WARNING: DrawTriangles() hooking failed: entity "
+                "report mode will not draw entity hull."
+            );
+        }
+    }
+
+    if (!g_hookIsThirdPerson.IsHooked() || !g_hookCameraOffset.IsHooked())
+    {
+        g_hookIsThirdPerson.Unhook();
+        g_hookCameraOffset.Unhook();
+        g_pClientEngfuncs->Con_Printf(
+            "WARNING: IsThirdPerson() hooking failed: "
+            "command gsm_thirdperson will not work."
+        );
+    }
+
+    bool isHookSuccessful = g_hookRedraw.IsHooked() && g_hookPlayerMove.IsHooked();
+    if (!isHookSuccessful)
+    {
+        RevertHooks();
+        EXCEPT("unable to hook desired functions");
+    }
+}
+
+void CHooks::Remove()
+{
+    // check for client.dll not already unloaded from process
+    if (GetModuleHandle("client.dll"))
+    {
+        RevertHooks();
+    }
+}
+
+void CHooks::RevertHooks()
+{
+    g_hookRedraw.Unhook();
+    g_hookPlayerMove.Unhook();
+    g_hookKeyEvent.Unhook();
+    g_hookDrawTriangles.Unhook();
+    g_hookIsThirdPerson.Unhook();
+    g_hookCameraOffset.Unhook();
 }

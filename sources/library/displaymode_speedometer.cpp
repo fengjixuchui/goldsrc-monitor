@@ -1,27 +1,50 @@
 #include "displaymode_speedometer.h"
-#include "core.h"
-#include "globals.h"
+#include "client_module.h"
+#include "utils.h"
+#include "local_player.h"
 
-CModeSpeedometer &g_ModeSpeedometer = CModeSpeedometer::GetInstance();
-
-CModeSpeedometer &CModeSpeedometer::GetInstance()
-{
-    static CModeSpeedometer instance;
-    return instance;
-}
-
-void CModeSpeedometer::Render2D(int scrWidth, int scrHeight)
+void CModeSpeedometer::Render2D(int scrWidth, int scrHeight, CStringStack &screenText)
 {
     int stringWidth;
+    const int centerX = scrWidth / 2;
+    const int centerY = scrHeight / 2;
     const int speedometerMargin = 35;
+    float velocity;
 
-    g_ScreenText.Clear();
-    g_ScreenText.PushPrintf("%.2f", g_pPlayerMove->velocity.Length2D());
-    stringWidth = GetStringWidth(g_ScreenText.StringAt(0));
+    screenText.Clear();
+    if (g_LocalPlayer.IsSpectate())
+    {
+        int targetIndex = g_LocalPlayer.GetSpectateTargetIndex();
+        if (g_pClientEngfuncs->GetEntityByIndex(targetIndex) != nullptr)
+        {
+            velocity = Utils::GetEntityVelocityApprox(targetIndex).Length2D(); 
+            //DrawVelocityBar(centerX, centerY, velocity);
+        }
+        else
+            return;
+    }
+    else
+        velocity = g_LocalPlayer.GetVelocityHorz();
 
-    DrawStringStack(
-        (scrWidth / 2) + stringWidth / 2, 
-        (scrHeight / 2) + speedometerMargin, 
-        g_ScreenText
+    screenText.PushPrintf("%3.2f", velocity);
+    stringWidth = Utils::GetStringWidth(screenText.StringAt(0));
+    Utils::DrawStringStack(
+        centerX + stringWidth / 2,
+        centerY + speedometerMargin,
+        screenText
+    );
+}
+
+void CModeSpeedometer::DrawVelocityBar(int centerX, int centerY, float velocity)
+{
+    const int barHeight = 15;
+    const int barMargin = 60;
+    const int barWidth = 100.f / 600.f * velocity;
+    g_pClientEngfuncs->pfnFillRGBA(
+        centerX - (barWidth / 2),
+        centerY + barMargin,
+        barWidth,
+        barHeight,
+        0, 255, 0, 200
     );
 }

@@ -16,26 +16,24 @@ public:
     };
 
 public:
-    static CModeMeasurement &GetInstance();
+    CModeMeasurement() {};
+    virtual ~CModeMeasurement() {};
 
-    void Render2D(int screenWidth, int screenHeight) override;
+    void Render2D(int screenWidth, int screenHeight, CStringStack &screenText) override;
     void Render3D() override {};
     bool KeyInput(int isKeyDown, int keyCode, const char *) override;
-
-    const vec3_t&   GetPointOriginA();
-    const vec3_t&   GetPointOriginB();
-    const char*     GetSnapModeName();
-    float           GetPointsDistance();
-    float           GetLineElevationAngle();
+    void HandleChangelevel() override;
+    DisplayModeIndex GetModeIndex() override { return DISPLAYMODE_MEASUREMENT; };
 
 private:
-    CModeMeasurement() {};
-    CModeMeasurement(const CModeMeasurement&) = delete;
-    CModeMeasurement& operator=(const CModeMeasurement&) = delete;
+    const vec3_t &GetPointOriginA() const;
+    const vec3_t &GetPointOriginB() const;
+    const char *GetSnapModeName() const;
+    float GetPointsDistance() const;
+    float GetLineElevationAngle() const;
 
     void UpdatePointOrigin(vec3_t &linePoint, const vec3_t &targetPoint);
     void TraceAlongNormal(pmtrace_t &traceData, float traceLength);
-    bool WorldToScreen(int w, int h, int &x, int &y, vec3_t &origin);
     void DrawVisualization(int screenWidth, int screenHeight);
     void DrawMeasurementLine(float lifeTime);
     void DrawPointHints(int screenWidth, int screenHeight);
@@ -47,5 +45,3 @@ private:
     HLSPRITE     m_iLineSprite;
     int          m_iSnapMode = SNAPMODE_FREE;
 };
-
-extern CModeMeasurement &g_ModeMeasurement;

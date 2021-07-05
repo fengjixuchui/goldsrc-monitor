@@ -1,7 +1,8 @@
 #pragma once
+#include "app_info.h"
+#include <stdint.h>
 #include <string>
 #include <Windows.h>
-#include <shlwapi.h>
 
 class CApplication
 {
@@ -13,11 +14,18 @@ private:
     CApplication() {};
     ~CApplication() {};
 
+    void ParseParameters(int argc, wchar_t *argv[]);
+    void StartMainLoop();
     void ReportError(const char *msg);
-    void OpenGameProcess(HANDLE &processHandle);
-    bool FindLibraryPath(std::wstring &libPath);
+    bool IsLibraryInjected(HANDLE procHandle);
+    bool IsGameLoaded(HWND windowHandle, int timeout);
+    HWND FindGameWindow(HANDLE procHandle);
+    HANDLE OpenGameProcess();
     wchar_t *WritePathString(HANDLE procHandle, const std::wstring &libPath);
-    int GetFuncReturnCode(HANDLE threadHandle);
     void InjectLibrary(HANDLE procHandle);
     void PrintTitleText();
+
+    size_t m_iInjectDelay = 3000;
+    std::wstring m_szProcessName = DEFAULT_PROCESS_NAME;
+    std::wstring m_szLibraryName = DEFAULT_LIBRARY_NAME;
 };
